@@ -1,65 +1,52 @@
-# PodBooth MiniMax H3 — RunPod Serverless worker (I2V / FL2VA)
-#
-# Own CUDA 12.8 Comfy base. huchukato/comfyui-qwenvl-runpod:cu13-mmh3 is a
-# *reference* for "what a working H3 Comfy box contains", not a FROM.
-# We keep: ComfyUI ≥ 0.30 (native MiniMaxH3ImageToVideo), ffmpeg, Manager,
-# extra_model_paths on /runpod-volume. We drop: Jupyter, FileBrowser,
-# first-boot model wget, QwenVL prompt-enhancer, TensorRT/RIFE, Wan nodes.
-#
-# Do NOT wget MiniMax H3 checkpoints. FL2VA + encoder + VAEs live on the
-# network volume. A baked H3 image is hundreds of GB.
+# MiniMax H3 FL2VA Turbo — RunPod Serverless worker for RTX 4090 / RTX 5090.
+# Weights stay on a Network Volume, keeping the image small enough for fast cold pulls.
 
-FROM runpod/pytorch:1.2.0-cu1281-torch280-ubuntu2404
+ARG BASE_IMAGE=runpod/pytorch:1.2.0-cu1281-torch280-ubuntu2404
+FROM ${BASE_IMAGE}
 
-ARG COMFYUI_VERSION=v0.35.2
+ARG COMFYUI_VERSION=v0.36.0
+ARG BUILD_VERSION=dev
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV COMFY_DIR=/ComfyUI
-ENV COMFY_PYTHON=python3
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    COMFY_DIR=/ComfyUI \
+    COMFY_PYTHON=python3 \
+    COMFY_MODEL_BASE=/runpod-volume/models \
+    MODEL_MANIFEST_PATH=/opt/h3/models.json \
+    H3_I2V_WORKFLOW=/workflows/h3_i2v_api.json \
+    H3_TURBO_LORA=minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors \
+    BUILD_VERSION=${BUILD_VERSION}
 
 WORKDIR /
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git \
-        ffmpeg \
-        wget \
-        curl \
-        ca-certificates \
-        libgl1 \
-        libglib2.0-0 \
+        ca-certificates curl ffmpeg git libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Native H3 nodes shipped in ComfyUI ≥ 0.30.0. Pin a current stable tag.
+# H3 nodes are part of ComfyUI core. No Manager/Jupyter/custom-node bootstrap is
+# installed: fewer layers, less attack surface and less startup work.
 RUN git clone --depth 1 --branch "${COMFYUI_VERSION}" \
         https://github.com/comfyanonymous/ComfyUI.git /ComfyUI \
     && python3 -m pip install --no-cache-dir -r /ComfyUI/requirements.txt
 
-# Manager is the usual operator toolbox; H3 I2V itself is comfy-core.
-RUN git clone --depth 1 \
-        https://github.com/Comfy-Org/ComfyUI-Manager.git /ComfyUI/custom_nodes/ComfyUI-Manager \
-    && if [ -f /ComfyUI/custom_nodes/ComfyUI-Manager/requirements.txt ]; then \
-         python3 -m pip install --no-cache-dir -r /ComfyUI/custom_nodes/ComfyUI-Manager/requirements.txt; \
-       fi
+COPY requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# Serverless I/O spine. Gradio lives on the laptop, not in this image.
-RUN python3 -m pip install --no-cache-dir \
-        "runpod>=1.7.0" \
-        "websocket-client>=1.7.0" \
-        "requests>=2.31.0"
+# Fail at image-build time if the base torch wheel cannot execute on Ada
+# (RTX 4090, sm_89) or Blackwell (RTX 5090, sm_120).
+COPY check_arch.py /tmp/check_arch.py
+RUN python3 /tmp/check_arch.py sm_89 sm_120 && rm /tmp/check_arch.py
 
-# Sage Attention is a speed win on H100 when the wheel exists; fail open if not.
-RUN python3 -m pip install --no-cache-dir sageattention \
-    || echo "WARN: sageattention wheel not installed; Comfy will use default attention"
-
-COPY handler.py /handler.py
-COPY h3_graph.py /h3_graph.py
-COPY extra_model_paths.yaml /ComfyUI/extra_model_paths.yaml
+COPY handler.py h3_graph.py worker_contract.py /opt/h3/
+COPY models.json /opt/h3/models.json
 COPY workflows /workflows
+COPY extra_model_paths.yaml /ComfyUI/extra_model_paths.yaml
 COPY entrypoint.sh /entrypoint.sh
+
 RUN chmod +x /entrypoint.sh \
     && mkdir -p /ComfyUI/input /ComfyUI/output /ComfyUI/temp
 
-# Serverless: ComfyUI + handler only.
+ENV PYTHONPATH=/opt/h3
 CMD ["/entrypoint.sh"]

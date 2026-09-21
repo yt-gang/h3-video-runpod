@@ -27,6 +27,7 @@ from h3_graph import (
     DEFAULT_HEIGHT,
     DEFAULT_SAMPLER,
     DEFAULT_STEPS,
+    DEFAULT_TURBO_LORA,
     DEFAULT_WIDTH,
     apply_i2v_job,
     duration_to_length,
@@ -35,6 +36,7 @@ from h3_graph import (
     has_start_image,
     snap_dim,
 )
+from worker_contract import ContractError, models_ready, upload_video
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +49,8 @@ WORKFLOW_I2V = os.getenv("H3_I2V_WORKFLOW", "/workflows/h3_i2v_api.json")
 # /runpod-volume path is rejected by POST /prompt with HTTP 400.
 COMFY_INPUT_DIR = os.getenv("COMFY_INPUT_DIR", "/ComfyUI/input")
 VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".mov")
+MAX_INPUT_BYTES = 32 * 1024 * 1024
+MAX_CANVAS_PIXELS = 768 * 1344
 
 
 def process_input(input_data: str, temp_dir: str, output_filename: str, input_type: str) -> str:
@@ -62,7 +66,7 @@ def process_input(input_data: str, temp_dir: str, output_filename: str, input_ty
         logger.info("Staged %s -> %s", input_data, dest_path)
         return dest_name
     if input_type == "url":
-        logger.info("URL input: %s", input_data)
+        logger.info("Staging HTTPS image input")
         download_file_from_url(input_data, dest_path)
         return dest_name
     if input_type == "base64":
@@ -73,9 +77,22 @@ def process_input(input_data: str, temp_dir: str, output_filename: str, input_ty
 
 
 def download_file_from_url(url: str, output_path: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https":
+        raise Exception("image URL must use HTTPS")
     try:
-        urllib.request.urlretrieve(url, output_path)
-        logger.info("Downloaded %s -> %s", url, output_path)
+        request = urllib.request.Request(url, headers={"User-Agent": "catline-h3-worker/1"})
+        with urllib.request.urlopen(request, timeout=60) as response, open(output_path, "wb") as target:
+            declared = int(response.headers.get("Content-Length") or 0)
+            if declared > MAX_INPUT_BYTES:
+                raise Exception("image URL exceeds 32 MiB")
+            total = 0
+            while chunk := response.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_INPUT_BYTES:
+                    raise Exception("image URL exceeds 32 MiB")
+                target.write(chunk)
+        logger.info("Downloaded image from %s%s", parsed.netloc, parsed.path)
         return output_path
     except Exception as exc:
         raise Exception(f"URL download failed: {exc}") from exc
@@ -89,6 +106,8 @@ def save_base64_to_file(base64_data: str, temp_dir: str, output_filename: str) -
         decoded = base64.b64decode(payload)
     except (binascii.Error, ValueError) as exc:
         raise Exception(f"Base64 decoding failed: {exc}") from exc
+    if len(decoded) > MAX_INPUT_BYTES:
+        raise Exception("base64 image exceeds 32 MiB")
     os.makedirs(temp_dir, exist_ok=True)
     file_path = os.path.abspath(os.path.join(temp_dir, output_filename))
     with open(file_path, "wb") as handle:
@@ -209,10 +228,21 @@ def _wait_http(timeout_s: int = 180) -> None:
 
 def handler(job: dict[str, Any]) -> dict[str, Any]:
     job_input = job.get("input") or {}
+    if not isinstance(job_input, dict):
+        return {"error": "input must be an object"}
     logger.info("Received job keys: %s", sorted(job_input.keys()))
     task_id = f"task_{uuid.uuid4()}"
+    staged_inputs: list[str] = []
+    generated_paths: list[str] = []
 
     try:
+        if job_input.get("health_check"):
+            return {
+                "ready": models_ready(),
+                "model": "minimax-h3-fl2va-turbo",
+                "build_version": os.environ.get("BUILD_VERSION", "unknown"),
+                "gpu_targets": ["RTX 4090 (sm_89)", "RTX 5090 (sm_120)"],
+            }
         if has_reference_pack(job_input):
             return {
                 "error": "H3 v1 is I2V/FL2VA only. Ref2VA (reference_images / mode=r2v) is not wired yet."
@@ -222,6 +252,7 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
 
         image_path = resolve_slot(job_input, task_id, "image", "input_image.png")
         end_image_path = resolve_slot(job_input, task_id, "end_image", "end_image.png") if has_end_image(job_input) else None
+        staged_inputs.extend(path for path in (image_path, end_image_path) if path)
 
         duration = job_input.get("duration", DEFAULT_DURATION)
         fps = int(job_input.get("fps", 24))
@@ -232,11 +263,20 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
 
         width = snap_dim(job_input.get("width", DEFAULT_WIDTH))
         height = snap_dim(job_input.get("height", DEFAULT_HEIGHT))
+        if width * height > MAX_CANVAS_PIXELS:
+            raise ContractError("width * height exceeds the 768x1344 H3 limit")
         steps = int(job_input.get("steps", DEFAULT_STEPS))
+        if not 1 <= steps <= 40:
+            raise ContractError("steps must be between 1 and 40")
         seed = int(job_input.get("seed", 42))
         sampler = job_input.get("sampler") or DEFAULT_SAMPLER
-        loras = job_input.get("loras") or []
-        disable_audio = bool(job_input.get("disable_audio", False))
+        loras = job_input.get("loras")
+        if loras is None:
+            turbo_lora = os.environ.get("H3_TURBO_LORA", DEFAULT_TURBO_LORA).strip()
+            loras = [{"name": turbo_lora, "strength": 1.0}] if turbo_lora else []
+        if not isinstance(loras, list):
+            raise ContractError("loras must be an array")
+        disable_audio = bool(job_input.get("disable_audio", True))
         text_prompt = _compose_prompt(job_input)
 
         template = load_workflow(WORKFLOW_I2V)
@@ -284,17 +324,41 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
                     raise Exception("WebSocket connection timeout (3 minutes)") from exc
                 time.sleep(5)
 
+        started_at = time.monotonic()
         videos = wait_for_videos(ws, prompt)
         ws.close()
         if not videos:
             return {"error": "No video could be found."}
+        generated_paths.extend(videos)
+
+        output_target = job_input.get("output")
+        if output_target is not None:
+            result = upload_video(videos[0], output_target)
+            result["generation_seconds"] = round(time.monotonic() - started_at, 3)
+            return result
 
         with open(videos[0], "rb") as handle:
             encoded = base64.b64encode(handle.read()).decode("utf-8")
-        return {"video": encoded}
+        return {
+            "video": encoded,
+            "content_type": "video/mp4",
+            "generation_seconds": round(time.monotonic() - started_at, 3),
+        }
     except Exception as exc:
         logger.exception("Handler failed")
         return {"error": str(exc)}
+    finally:
+        for name in staged_inputs:
+            try:
+                os.remove(os.path.join(COMFY_INPUT_DIR, name))
+            except OSError:
+                pass
+        for path in generated_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
-runpod.serverless.start({"handler": handler})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})

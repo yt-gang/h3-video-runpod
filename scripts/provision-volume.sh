@@ -24,6 +24,7 @@ hf download Comfy-Org/MiniMax-H3 \
   --include "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" \
   --include "vae/minimax_h3_video_vae_fp16.safetensors" \
   --include "vae/minimax_h3_audio_vae_fp32.safetensors" \
+  --include "loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors" \
   --local-dir "${ROOT}/models"
 
 # Public Comfy template still (not a character LoRA) so I2V jobs have a path input.

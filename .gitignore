@@ -6,6 +6,7 @@
 # RunPod local dev data (often contains keys, job history, etc.)
 .runpod/*
 !.runpod/hub.json
+!.runpod/tests.json
 
 # Python
 __pycache__/

@@ -19,11 +19,12 @@ DEFAULT_UNET = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 DEFAULT_CLIP = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 DEFAULT_VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 DEFAULT_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
-DEFAULT_WIDTH = 768
-DEFAULT_HEIGHT = 1152
+DEFAULT_WIDTH = 704
+DEFAULT_HEIGHT = 1248
 DEFAULT_DURATION = 5
-DEFAULT_STEPS = 20
+DEFAULT_STEPS = 4
 DEFAULT_SAMPLER = "res_multistep"
+DEFAULT_TURBO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 
 def find_nodes(prompt: dict[str, Any], class_type: str, title: str | None = None) -> list[str]:
@@ -142,6 +143,11 @@ def apply_i2v_job(
     if disable_audio:
         create_id = find_one(graph, "CreateVideo")
         graph[create_id]["inputs"].pop("audio", None)
+        audio_decode_ids = find_nodes(graph, "VAEDecodeAudio")
+        audio_vae_id = find_one(graph, "VAELoader", title="Audio VAE")
+        for node_id in audio_decode_ids:
+            graph.pop(node_id, None)
+        graph.pop(audio_vae_id, None)
 
     return graph
 

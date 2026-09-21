@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 
 from h3_graph import (
+    DEFAULT_HEIGHT,
+    DEFAULT_STEPS,
+    DEFAULT_TURBO_LORA,
+    DEFAULT_WIDTH,
     apply_i2v_job,
     apply_loras,
     duration_to_length,
@@ -25,6 +29,13 @@ def test_duration_grid():
     assert duration_to_length(5) % 17 == 5
     assert duration_to_length(10) % 17 == 5
     assert duration_to_length(15) % 17 == 5
+
+
+def test_4090_optimized_defaults():
+    assert (DEFAULT_WIDTH, DEFAULT_HEIGHT) == (704, 1248)
+    assert DEFAULT_WIDTH * DEFAULT_HEIGHT < 768 * 1344
+    assert DEFAULT_STEPS == 4
+    assert "turbo_4step" in DEFAULT_TURBO_LORA
 
 
 def test_snap_dim_is_multiple_of_32():
@@ -79,6 +90,8 @@ def test_patch_end_frame_and_loras():
     assert patched["16"]["inputs"]["model"] == ["lora_1", 0]
     assert patched["9"]["inputs"]["model"] == ["lora_1", 0]
     assert "audio" not in patched["91"]["inputs"]
+    assert not find_nodes(patched, "VAEDecodeAudio")
+    assert not find_nodes(patched, "VAELoader", title="Audio VAE")
 
 
 def test_loras_do_not_rewire_themselves():

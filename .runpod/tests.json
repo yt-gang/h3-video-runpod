@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "health_check",
+      "input": {
+        "health_check": true
+      },
+      "timeout": 300000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "H3_BUILD_TEST",
+        "value": "true"
+      }
+    ],
+    "allowedCudaVersions": ["12.8"]
+  }
+}
