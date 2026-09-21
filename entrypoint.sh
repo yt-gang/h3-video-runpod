@@ -13,10 +13,21 @@ if [ "${H3_BUILD_TEST:-false}" != "true" ]; then
     echo "h3-worker: /runpod-volume is required" >&2
     exit 1
   fi
+  if ! MODEL_ROOT="$("${PYTHON}" -c 'from worker_contract import resolve_model_base; print(resolve_model_base())')"; then
+    echo "h3-worker: cached model resolution failed" >&2
+    exit 1
+  fi
   export COMFY_MODEL_BASE="${MODEL_ROOT}"
   if ! "${PYTHON}" -c 'from worker_contract import models_ready; raise SystemExit(0 if models_ready() else 1)'; then
     echo "h3-worker: required model files are missing or incomplete; run scripts/provision-volume.sh" >&2
     exit 1
+  fi
+  if [ "${MODEL_ROOT}" != "/runpod-volume/models" ]; then
+    ln -sfn "${MODEL_ROOT}" /tmp/h3-cache-current
+    echo "h3-worker: using RunPod cached model snapshot"
+  else
+    rm -f /tmp/h3-cache-current
+    echo "h3-worker: using network-volume models"
   fi
 else
   echo "h3-worker: build-test mode, skipping model validation"

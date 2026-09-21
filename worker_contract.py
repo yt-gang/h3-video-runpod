@@ -88,3 +88,42 @@ def models_ready() -> bool:
         return True
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return False
+
+
+def resolve_model_base() -> Path:
+    """Prefer a validated RunPod cached-model snapshot, then the network volume."""
+    fallback = Path(os.environ.get("COMFY_MODEL_BASE", "/runpod-volume/models"))
+    repo_id = os.environ.get("H3_CACHED_MODEL_REPO", "").strip().strip("/")
+    if not repo_id:
+        return fallback
+    if repo_id.count("/") != 1 or any(part in {"", ".", ".."} for part in repo_id.split("/")):
+        raise ContractError("H3_CACHED_MODEL_REPO must be org/name")
+    cache_root = Path(os.environ.get("H3_CACHE_ROOT", "/runpod-volume/huggingface-cache/hub"))
+    repository = cache_root / f"models--{repo_id.replace('/', '--')}"
+    candidates: list[Path] = []
+    try:
+        revision = (repository / "refs" / "main").read_text(encoding="utf-8").strip()
+        if revision:
+            candidates.append(repository / "snapshots" / revision)
+    except OSError:
+        pass
+    snapshots = repository / "snapshots"
+    if snapshots.is_dir():
+        candidates.extend(sorted((path for path in snapshots.iterdir() if path.is_dir()), reverse=True))
+
+    manifest_path = Path(os.environ.get("MODEL_MANIFEST_PATH", "/opt/h3/models.json"))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ContractError("model manifest is unavailable") from exc
+
+    for candidate in candidates:
+        if all(
+            item.get("optional")
+            or ((path := candidate / item["target"]).is_file() and path.stat().st_size >= int(item.get("min_bytes", 1)))
+            for item in manifest["files"]
+        ):
+            return candidate
+    if os.environ.get("H3_REQUIRE_CACHED_MODEL", "").lower() == "true":
+        raise ContractError(f"cached model snapshot is missing or incomplete for {repo_id}")
+    return fallback

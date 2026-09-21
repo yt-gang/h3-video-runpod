@@ -25,6 +25,10 @@ This optimizes container pull/startup. The first inference after a cold start st
 has to read the model from the Network Volume; keep `active workers = 1` when latency
 is more important than scale-to-zero cost.
 
+For RunPod's host-local Hugging Face cache path, private repository publishing,
+territory requirements and a measured cold/hot verification procedure, see
+[`docs/CACHED_MODEL.md`](docs/CACHED_MODEL.md).
+
 ## Import into RunPod
 
 1. Import `https://github.com/yt-gang/h3-video-runpod` as a Serverless GitHub worker.
@@ -91,7 +95,7 @@ Health probe:
 ```bash
 python -m pip install pytest requests
 pytest -q
-bash -n entrypoint.sh scripts/provision-volume.sh
+bash -n entrypoint.sh scripts/provision-volume.sh scripts/publish-cached-model.sh
 docker build --platform linux/amd64 -t h3-video-runpod:test .
 ```
 

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 
 import pytest
 
-from worker_contract import ContractError, models_ready, upload_video, validate_output_target
+from worker_contract import (
+    ContractError,
+    models_ready,
+    resolve_model_base,
+    upload_video,
+    validate_output_target,
+)
 
 
 class Response:
@@ -64,3 +69,32 @@ def test_models_ready_checks_required_files(monkeypatch, tmp_path):
     assert not models_ready()
     model.write_bytes(b"ready")
     assert models_ready()
+
+
+def test_resolve_model_base_prefers_valid_cached_snapshot(monkeypatch, tmp_path):
+    manifest = {"files": [{"target": "diffusion_models/model.safetensors", "min_bytes": 4}]}
+    manifest_path = tmp_path / "models.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    repository = tmp_path / "hub" / "models--yt-gang--h3-cache"
+    snapshot = repository / "snapshots" / "abc123"
+    model = snapshot / "diffusion_models" / "model.safetensors"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"ready")
+    (repository / "refs").mkdir()
+    (repository / "refs" / "main").write_text("abc123\n", encoding="utf-8")
+    monkeypatch.setenv("MODEL_MANIFEST_PATH", str(manifest_path))
+    monkeypatch.setenv("COMFY_MODEL_BASE", str(tmp_path / "fallback"))
+    monkeypatch.setenv("H3_CACHED_MODEL_REPO", "yt-gang/h3-cache")
+    monkeypatch.setenv("H3_CACHE_ROOT", str(tmp_path / "hub"))
+    assert resolve_model_base() == snapshot
+
+
+def test_resolve_model_base_can_require_cache(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "models.json"
+    manifest_path.write_text(json.dumps({"files": []}), encoding="utf-8")
+    monkeypatch.setenv("MODEL_MANIFEST_PATH", str(manifest_path))
+    monkeypatch.setenv("H3_CACHED_MODEL_REPO", "yt-gang/missing")
+    monkeypatch.setenv("H3_CACHE_ROOT", str(tmp_path / "hub"))
+    monkeypatch.setenv("H3_REQUIRE_CACHED_MODEL", "true")
+    with pytest.raises(ContractError, match="missing or incomplete"):
+        resolve_model_base()

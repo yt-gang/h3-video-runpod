@@ -26,7 +26,7 @@ jobs:
           python -m json.tool .runpod/tests.json >/dev/null
           python -m json.tool models.json >/dev/null
           python -m json.tool workflows/h3_i2v_api.json >/dev/null
-          bash -n entrypoint.sh scripts/provision-volume.sh
+          bash -n entrypoint.sh scripts/provision-volume.sh scripts/publish-cached-model.sh
           pytest -q
 
   docker:

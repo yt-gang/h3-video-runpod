@@ -13,17 +13,21 @@ comfyui:
     diffusion_models: |
         models/diffusion_models
         models/unet
+        /tmp/h3-cache-current/diffusion_models
         /runpod-volume/models/diffusion_models
         /runpod-volume/models/
     text_encoders: |
         models/text_encoders
+        /tmp/h3-cache-current/text_encoders
         /runpod-volume/models/text_encoders
     loras: |
         models/loras/
+        /tmp/h3-cache-current/loras/
         /runpod-volume/loras/
         /runpod-volume/models/loras/
     vae: |
         models/vae
+        /tmp/h3-cache-current/vae
         /runpod-volume/models/vae
     audio_encoders: |
         models/audio_encoders
