@@ -1,6 +1,7 @@
 """RunPod Serverless handler for MiniMax H3 FL2VA (I2V + optional last frame).
 
-Keeps the Wan booth I/O spine (path/url/base64 → Comfy websocket → base64 mp4)
+Keeps the Wan booth I/O spine (path/url/base64 → Comfy websocket → presigned PUT
+or legacy base64 MP4)
 and rewrites workflow patching to look up nodes by class_type.
 """
 

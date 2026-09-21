@@ -25,13 +25,14 @@ different volume).
     audio_encoders/       # unused by the official I2V graph
   loras/                  # SAME folder the Wan booth already uses
   inputs/                 # stills / ref packs the client can address by path
-  outputs/                # optional; v1 returns base64 mp4 instead
+  outputs/                # optional workspace; production output uses presigned PUT
 ```
 
-## v1 I2V / FL2VA — download these four files
+## v1 I2V / FL2VA — download these five files
 
-Prefer Comfy-Org **pruned INT8 ConvRot** on the `cu13-mmh3` image (PyTorch cu130).
-`fp8_scaled` is the fallback if INT8 ConvRot cannot load.
+Use Comfy-Org **pruned INT8 ConvRot** with this repository's CUDA 12.8 / PyTorch
+2.8 image. The Docker build verifies both Ada `sm_89` and Blackwell `sm_120`
+kernels before publishing.
 
 | Role | Exact filename | Size | Hugging Face |
 |---|---|---|---|
@@ -64,9 +65,11 @@ hf download Comfy-Org/MiniMax-H3 \
 
 If `hf download` writes into `diffusion_models/` under that local-dir, you already have the right layout.
 
-## Optional turbo LoRA (still volume-only)
+## Turbo LoRA (volume-only)
 
-Official I2V template ships an 8-step turbo LoRA. v1 does **not** enable it unless you name it in `loras`.
+The official four-step Turbo LoRA is required by `models.json`, downloaded by the
+provisioning script and enabled by default. Override `H3_TURBO_LORA` or pass an
+explicit `loras` list only when intentionally selecting another sampler profile.
 
 | File | Typical steps |
 |---|---|
@@ -83,14 +86,15 @@ The sibling image `podbooth-minimax-h3-ref2va` downloads onto this same volume:
 
 - `minimax_h3_ref2va_pruned_int8_convrot.safetensors` (21 GB INT8)
 
-Projected used with both DiTs: ~62 GB of 100 GB. Turbo LoRAs are optional and family-specific (I2V `fl2v` 8-step vs Ref2V `ref2v` 4-step). Do not mix them.
+Projected used with both DiTs: ~62 GB of 100 GB. Turbo LoRAs are family-specific
+(I2V `fl2v` vs Ref2V `ref2v`). Do not mix them.
 
-## 24 GB vs 48 GB
+## 24 GB vs 32 GB
 
 | GPU | What v1 will advertise |
 |---|---|
-| 24 GB (4090) | Pruned INT8 I2V around 0.9 MP / 5–10 s. Tight. |
-| 48 GB (L40S / 6000 Ada) | Comfortable 768p 10–15 s I2V. Default target. |
-| 32 GB (5090) | Pruned INT8 I2V is the right file; full INT8 is optional. |
+| 24 GB (4090) | Supported default: 704×1248, 5 s, four-step Turbo, audio off. Tight; model offload is expected. |
+| 32 GB (5090) | Preferred SKU: same default with more of the pipeline resident. |
 
-Do not advertise 24 GB as the Ref2VA 15 s 768p target.
+Longer clips and native audio materially increase runtime and VRAM pressure. Do not
+advertise 24 GB as a Ref2VA or 15-second 768p target.

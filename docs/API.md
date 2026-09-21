@@ -1,6 +1,7 @@
 # Job contract — PodBooth MiniMax H3 v1
 
-Worker input is the RunPod `{"input": {…}}` body. Output is `{"video": "<base64 mp4>"}` or `{"error": "…"}`.
+Worker input is the RunPod `{"input": {…}}` body. Production jobs should upload
+the MP4 with a presigned HTTPS PUT URL; base64 remains available for compatibility.
 
 This image implements **I2V / FL2VA** only. A reference pack or `mode: "r2v"` returns an error pointing at the sibling Ref2VA worker (`podbooth-minimax-h3-ref2va`). The split keeps each image lightweight.
 
@@ -14,18 +15,21 @@ This image implements **I2V / FL2VA** only. A reference pack or `mode: "r2v"` re
     "negative_prompt": "",
     "image_path": "/runpod-volume/inputs/start.png",
     "end_image_path": "/runpod-volume/inputs/end.png",
-    "width": 768,
-    "height": 1152,
-    "duration": 10,
+    "width": 704,
+    "height": 1248,
+    "duration": 5,
     "fps": 24,
-    "steps": 16,
+    "steps": 4,
     "seed": 42,
     "cfg": null,
     "sampler": null,
-    "disable_audio": false,
-    "loras": [
-      {"name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", "strength": 1.0}
-    ]
+    "disable_audio": true,
+    "output": {
+      "upload_url": "https://storage.example.invalid/presigned-put-url",
+      "object_key": "projects/project-id/generations/version-id/output.mp4",
+      "content_type": "video/mp4",
+      "required_headers": {"Content-Type": "video/mp4"}
+    }
   }
 }
 ```
@@ -52,15 +56,15 @@ End frame present → handler wires `MiniMaxH3ImageToVideo.last_frame`. Same gra
 |---|---|---|
 | `prompt` | required | Motion + audio. See `docs/PROMPTING.md`. |
 | `negative_prompt` | `""` | H3 I2V has no native negative. Non-empty values are appended as `Avoid: …`. |
-| `width` / `height` | `768` / `1152` | Snapped to a **multiple of 32**. Native short edge is 768; official landscape default is 1344×768. |
+| `width` / `height` | `704` / `1248` | Snapped to a **multiple of 32**. This portrait default stays below 0.9 MP for the 24 GB path. |
 | `duration` | `5` | Seconds. Converted to frame `length` on the 17k+5 grid at 24 fps: 5→124, 10→243, 15→362. Allowed operator set is `{5,10,15}`. |
 | `fps` | `24` | Used only to convert duration. CreateVideo is baked at 24. |
-| `steps` | `20` | Official non-turbo default. 8 or 4 if you attach a turbo LoRA. |
+| `steps` | `4` | Paired with the required official four-step Turbo LoRA. |
 | `seed` | `42` | Integer. |
 | `sampler` | `res_multistep` | Patched onto `KSamplerSelect` when set. |
 | `cfg` | ignored | Official graph uses `BasicGuider` (no CFG). Unknown keys are ignored. |
-| `disable_audio` | `false` | If true, the CreateVideo node is run without the audio input. |
-| `loras` | `[]` | Flat list `{name, strength}`. Not Wan high/low pairs. Files must exist under `/runpod-volume/loras/` or `/runpod-volume/models/loras/`. |
+| `disable_audio` | `true` | The default saves VRAM and time. Set false only when the optional audio VAE exists. |
+| `loras` | default four-step Turbo | Flat list `{name, strength}`. Not Wan high/low pairs. Files must exist under `/runpod-volume/loras/` or `/runpod-volume/models/loras/`. |
 
 Optional overrides if the volume uses different filenames: `unet_name`, `clip_name`, `video_vae_name`, `audio_vae_name`.
 
@@ -70,7 +74,18 @@ H3 15 s 768p on a 48 GB card can run several minutes. Client default wait is **2
 
 ## Output
 
-Success:
+Recommended success response after presigned upload:
+
+```json
+{
+  "object_key": "projects/project-id/generations/version-id/output.mp4",
+  "content_type": "video/mp4",
+  "size_bytes": 1234567,
+  "sha256": "..."
+}
+```
+
+Legacy success response when `output` is omitted:
 
 ```json
 { "video": "<base64 mp4>" }
