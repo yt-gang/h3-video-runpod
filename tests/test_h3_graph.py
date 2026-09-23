@@ -46,6 +46,20 @@ def test_native_audio_is_enabled_by_default():
     assert should_disable_audio({"disable_audio": False}) is False
     assert should_disable_audio({"disable_audio": True}) is True
 
+    patched = apply_i2v_job(
+        WORKFLOW,
+        first_image_path="first.png",
+        text_prompt="ambient sound",
+        width=704,
+        height=1248,
+        length=124,
+        seed=42,
+        steps=4,
+    )
+    assert find_nodes(patched, "VAEDecodeAudio")
+    assert find_nodes(patched, "VAELoader", title="Audio VAE")
+    assert patched[find_one(patched, "CreateVideo")]["inputs"]["audio"]
+
 
 def test_snap_dim_is_multiple_of_32():
     assert snap_dim(768) == 768

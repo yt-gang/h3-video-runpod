@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -32,6 +33,8 @@ from h3_graph import (
     DEFAULT_WIDTH,
     apply_i2v_job,
     duration_to_length,
+    find_nodes,
+    find_one,
     has_end_image,
     has_reference_pack,
     has_start_image,
@@ -53,6 +56,29 @@ COMFY_INPUT_DIR = os.getenv("COMFY_INPUT_DIR", "/ComfyUI/input")
 VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".mov")
 MAX_INPUT_BYTES = 32 * 1024 * 1024
 MAX_CANVAS_PIXELS = 768 * 1344
+
+
+def video_has_audio(path: str) -> bool:
+    """Return whether ffprobe finds at least one audio stream."""
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
 def process_input(input_data: str, temp_dir: str, output_filename: str, input_type: str) -> str:
@@ -239,10 +265,17 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
 
     try:
         if job_input.get("health_check"):
+            audio_vae = os.path.join(
+                os.environ.get("COMFY_MODEL_BASE", "/runpod-volume/models"),
+                "vae",
+                "minimax_h3_audio_vae_fp32.safetensors",
+            )
             return {
                 "ready": models_ready(),
                 "model": "minimax-h3-fl2va-turbo",
                 "build_version": os.environ.get("BUILD_VERSION", "unknown"),
+                "native_audio_default": True,
+                "audio_vae_ready": os.path.isfile(audio_vae),
                 "gpu_targets": ["RTX 4090 (sm_89)", "RTX 5090 (sm_120)"],
             }
         if has_reference_pack(job_input):
@@ -301,7 +334,8 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
             disable_audio=disable_audio,
         )
         logger.info(
-            "Patched FL2VA graph: %sx%s length=%s steps=%s seed=%s end_frame=%s loras=%s",
+            "Patched FL2VA graph: %sx%s length=%s steps=%s seed=%s end_frame=%s loras=%s "
+            "disable_audio=%s audio_decode=%s audio_output=%s",
             width,
             height,
             length,
@@ -309,6 +343,9 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
             seed,
             bool(end_image_path),
             len(loras),
+            disable_audio,
+            bool(find_nodes(prompt, "VAEDecodeAudio")),
+            "audio" in prompt[find_one(prompt, "CreateVideo")].get("inputs", {}),
         )
 
         _wait_http()
@@ -332,6 +369,11 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
         if not videos:
             return {"error": "No video could be found."}
         generated_paths.extend(videos)
+
+        has_audio = video_has_audio(videos[0])
+        logger.info("Generated media validation: audio_stream=%s", has_audio)
+        if not disable_audio and not has_audio:
+            raise RuntimeError("Generated video has no audio stream while native audio is enabled")
 
         output_target = job_input.get("output")
         if output_target is not None:

@@ -57,7 +57,7 @@ def test_models_ready_checks_required_files(monkeypatch, tmp_path):
     manifest = {
         "files": [
             {"target": "diffusion_models/model.safetensors", "min_bytes": 4},
-            {"target": "vae/audio.safetensors", "min_bytes": 4, "optional": True},
+            {"target": "vae/audio.safetensors", "min_bytes": 4},
         ]
     }
     manifest_path = tmp_path / "models.json"
@@ -68,6 +68,10 @@ def test_models_ready_checks_required_files(monkeypatch, tmp_path):
     monkeypatch.setenv("COMFY_MODEL_BASE", str(tmp_path / "models"))
     assert not models_ready()
     model.write_bytes(b"ready")
+    assert not models_ready()
+    audio = tmp_path / "models" / "vae" / "audio.safetensors"
+    audio.parent.mkdir(parents=True)
+    audio.write_bytes(b"ready")
     assert models_ready()
 
 

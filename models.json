@@ -21,8 +21,7 @@
     },
     {
       "target": "vae/minimax_h3_audio_vae_fp32.safetensors",
-      "min_bytes": 500000000,
-      "optional": true
+      "min_bytes": 500000000
     }
   ]
 }

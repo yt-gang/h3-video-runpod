@@ -15,7 +15,7 @@ the real `linux/amd64` image on every change.
   every container image.
 - ComfyUI is pinned to `v0.36.0`; Manager, Jupyter and unrelated custom nodes are omitted.
 - The default path uses the pruned INT8 ConvRot FL2VA model, NVFP4 text encoder,
-  704×1248 vertical canvas, 5 seconds, no native audio and the official four-step
+  704×1248 vertical canvas, 5 seconds, native audio and the official four-step
   Turbo LoRA.
 - ComfyUI dynamically offloads models and reserves 1 GiB VRAM, which keeps the
   24 GB path usable. The 5090 keeps more of the pipeline resident and is the preferred SKU.
