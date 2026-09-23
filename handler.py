@@ -35,6 +35,7 @@ from h3_graph import (
     has_end_image,
     has_reference_pack,
     has_start_image,
+    should_disable_audio,
     snap_dim,
 )
 from worker_contract import ContractError, models_ready, upload_video
@@ -277,7 +278,7 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
             loras = [{"name": turbo_lora, "strength": 1.0}] if turbo_lora else []
         if not isinstance(loras, list):
             raise ContractError("loras must be an array")
-        disable_audio = bool(job_input.get("disable_audio", True))
+        disable_audio = should_disable_audio(job_input)
         text_prompt = _compose_prompt(job_input)
 
         template = load_workflow(WORKFLOW_I2V)

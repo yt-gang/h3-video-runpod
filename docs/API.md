@@ -23,7 +23,7 @@ This image implements **I2V / FL2VA** only. A reference pack or `mode: "r2v"` re
     "seed": 42,
     "cfg": null,
     "sampler": null,
-    "disable_audio": true,
+    "disable_audio": false,
     "output": {
       "upload_url": "https://storage.example.invalid/presigned-put-url",
       "object_key": "projects/project-id/generations/version-id/output.mp4",
@@ -63,7 +63,7 @@ End frame present → handler wires `MiniMaxH3ImageToVideo.last_frame`. Same gra
 | `seed` | `42` | Integer. |
 | `sampler` | `res_multistep` | Patched onto `KSamplerSelect` when set. |
 | `cfg` | ignored | Official graph uses `BasicGuider` (no CFG). Unknown keys are ignored. |
-| `disable_audio` | `true` | The default saves VRAM and time. Set false only when the optional audio VAE exists. |
+| `disable_audio` | `false` | Native audio is enabled by default and requires the audio VAE. Set true to save VRAM and generation time. |
 | `loras` | default four-step Turbo | Flat list `{name, strength}`. Not Wan high/low pairs. Files must exist under `/runpod-volume/loras/` or `/runpod-volume/models/loras/`. |
 
 Optional overrides if the volume uses different filenames: `unet_name`, `clip_name`, `video_vae_name`, `audio_vae_name`.

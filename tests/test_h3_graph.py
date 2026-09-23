@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from h3_graph import (
+    DEFAULT_DISABLE_AUDIO,
     DEFAULT_HEIGHT,
     DEFAULT_STEPS,
     DEFAULT_TURBO_LORA,
@@ -15,6 +16,7 @@ from h3_graph import (
     find_one,
     has_reference_pack,
     has_start_image,
+    should_disable_audio,
     snap_dim,
 )
 
@@ -35,7 +37,14 @@ def test_4090_optimized_defaults():
     assert (DEFAULT_WIDTH, DEFAULT_HEIGHT) == (704, 1248)
     assert DEFAULT_WIDTH * DEFAULT_HEIGHT < 768 * 1344
     assert DEFAULT_STEPS == 4
+    assert DEFAULT_DISABLE_AUDIO is False
     assert "turbo_4step" in DEFAULT_TURBO_LORA
+
+
+def test_native_audio_is_enabled_by_default():
+    assert should_disable_audio({}) is False
+    assert should_disable_audio({"disable_audio": False}) is False
+    assert should_disable_audio({"disable_audio": True}) is True
 
 
 def test_snap_dim_is_multiple_of_32():

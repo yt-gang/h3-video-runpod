@@ -23,8 +23,14 @@ DEFAULT_WIDTH = 704
 DEFAULT_HEIGHT = 1248
 DEFAULT_DURATION = 5
 DEFAULT_STEPS = 4
+DEFAULT_DISABLE_AUDIO = False
 DEFAULT_SAMPLER = "res_multistep"
 DEFAULT_TURBO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
+
+
+def should_disable_audio(job_input: dict[str, Any]) -> bool:
+    """Return the requested audio mode, keeping native audio by default."""
+    return bool(job_input.get("disable_audio", DEFAULT_DISABLE_AUDIO))
 
 
 def find_nodes(prompt: dict[str, Any], class_type: str, title: str | None = None) -> list[str]:

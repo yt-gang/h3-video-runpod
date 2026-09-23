@@ -68,7 +68,7 @@ The start image is required. Use exactly one of `image_url`, `image_path` or
     "duration": 5,
     "steps": 4,
     "seed": 42,
-    "disable_audio": true,
+    "disable_audio": false,
     "output": {
       "upload_url": "https://example.invalid/presigned-output",
       "object_key": "projects/project-id/generations/version-id/output.mp4",
